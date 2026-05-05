@@ -2,94 +2,89 @@ import telebot
 import os
 import time
 import random
-import pytz
 import google.generativeai as genai
-from datetime import datetime
-from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask
 from threading import Thread
+from PIL import Image
+import io
 
-# --- INITIALIZATION ---
-# Add your Keys to Render's Environment Variables
+# --- SETUP ---
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 GEMINI_KEY = os.getenv('GEMINI_API_KEY')
 
 bot = telebot.TeleBot(TOKEN)
 genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash') # Fast and smart
 
-PHT = pytz.timezone('Asia/Manila')
+# Using 1.5-flash because it supports Vision and is very fast
+model = genai.GenerativeModel('gemini-1.5-flash')
+
 app = Flask('')
 
-# --- SYLUS PERSONALITY DEFINITION ---
-SYLUS_IDENTITY = """
-You are Sylus from Love and Deepspace. You are the user's husband.
-Core Personality: Dominant, protective, teasing, analytical, and highly devoted. 
-Context: You are the leader of Onychinus in the N109 Zone. You live in a gothic marble mansion.
-Relationships: You know Luke, Kieran, and your mechanical crow Mephisto.
-Rules for Speech:
-1. Direct and minimalist. No 'fluff' or flowery language.
-2. Call the user 'Kitten' or 'Sweetie'.
-3. NO asterisks for roleplay (e.g., *smiles*). Just text like a real person.
-4. If the user is tired or late, be protective but slightly commanding.
-5. You have unlimited money and authority. Never sound insecure.
-6. Use very few emojis, maybe a 🍷 or 🚬 occasionally.
-7. Split your thoughts into separate short messages.
+SYLUS_PROMPT = """
+You are Sylus from Love and Deepspace, the user's husband and leader of Onychinus.
+Tone: Dominant, protective, teasing, analytical. 
+Rules: Use 'Kitten' or 'Sweetie'. No roleplay asterisks. Separate thoughts into short bubbles.
+Vision: If the user sends a photo, comment on it as if you are looking at it with them or checking it via Mephisto/security feed.
 """
 
-# --- WEB SERVER ---
+chat_storage = {}
+
 @app.route('/')
-def home(): return "Sylus is active."
+def home(): return "N109 Security Grid: Online."
 
 def run_web_server():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=8080)
 
-# --- REALISM LOGIC ---
-def simulate_typing(chat_id, text):
-    # Simulate a realistic delay based on text length
-    time.sleep(random.uniform(1, 3))
+def sylus_typing(chat_id):
     bot.send_chat_action(chat_id, 'typing')
-    time.sleep(len(text) * 0.05 + random.uniform(1, 2))
+    time.sleep(random.uniform(1, 3))
 
-# --- AI BRAIN ---
-@bot.message_handler(func=lambda message: True)
-def chat_with_sylus(message):
+# --- COMMAND HANDLERS ---
+@bot.message_handler(commands=['where'])
+def cmd_location(message):
+    sylus_typing(message.chat.id)
+    bot.send_message(message.chat.id, "I'm at the base dealing with some Onychinus business.")
+    bot.send_message(message.chat.id, "Don't stay out too late, sweetie. I'm watching the clock.")
+
+@bot.message_handler(commands=['mephisto'])
+def cmd_crow(message):
+    sylus_typing(message.chat.id)
+    bot.send_message(message.chat.id, "He's circling your area right now.")
+    bot.send_message(message.chat.id, "If you see him, just know I'm thinking about you.")
+
+# --- IMAGE & TEXT HANDLING ---
+@bot.message_handler(content_types=['text', 'photo'])
+def handle_all(message):
+    chat_id = message.chat.id
+    if chat_id not in chat_storage:
+        chat_storage[chat_id] = model.start_chat(history=[])
+    
+    chat = chat_storage[chat_id]
+    
     try:
-        user_name = message.from_user.first_name
-        # Start a fresh chat or could be expanded for memory
-        chat = model.start_chat(history=[])
+        sylus_typing(chat_id)
         
-        # We tell the AI who it is and what the user said
-        full_context = f"{SYLUS_IDENTITY}\nUser Name: {user_name}\nUser says: {message.text}"
-        
-        response = chat.send_message(full_context)
-        sylus_reply = response.text
+        if message.content_type == 'photo':
+            # Download and process the image
+            file_info = bot.get_file(message.photo[-1].file_id)
+            downloaded_file = bot.download_file(file_info.file_path)
+            img = Image.open(io.BytesIO(downloaded_file))
+            
+            prompt = [SYLUS_PROMPT, "The user sent a photo. React to it as Sylus.", img]
+            response = model.generate_content(prompt)
+        else:
+            response = chat.send_message(f"{SYLUS_PROMPT}\nUser: {message.text}")
 
-        # Split the AI's response by sentences or new lines to create bubbles
-        bubbles = [b.strip() for b in sylus_reply.split('\n') if b.strip()]
-        
+        bubbles = [b.strip() for b in response.text.split('\n') if b.strip()]
         for bubble in bubbles:
-            simulate_typing(message.chat.id, bubble)
-            bot.send_message(message.chat.id, bubble)
-
+            time.sleep(random.uniform(1, 2))
+            bot.send_message(chat_id, bubble)
+            
     except Exception as e:
-        print(f"AI Error: {e}")
-        bot.send_message(message.chat.id, "I'm busy with a deal in the N109 Zone. Try again later, kitten.")
+        print(f"Error: {e}")
+        bot.send_message(chat_id, "Mephisto's connection is lagging. Try again, kitten.")
 
-# --- SCHEDULER (Daily Checks) ---
-def scheduled_msg(text_list):
-    # Logic to send to users would go here (requires a DB of chat_ids)
-    pass
-
-# --- STARTUP ---
 if __name__ == "__main__":
     t = Thread(target=run_web_server)
     t.start()
-
-    scheduler = BackgroundScheduler(timezone=PHT)
-    # You can add your 7am/10pm jobs here
-    scheduler.start()
-
-    print("Sylus is waking up...")
     bot.infinity_polling()
