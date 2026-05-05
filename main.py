@@ -9,64 +9,116 @@ from flask import Flask
 from threading import Thread
 
 # --- INITIALIZATION ---
-# We use os.getenv to pull the token safely from Koyeb's settings later
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 bot = telebot.TeleBot(TOKEN)
 PHT = pytz.timezone('Asia/Manila')
-
-# --- WEB SERVER FOR KOYEB (Keep-Alive) ---
 app = Flask('')
 
+# --- SYLUS DATA ASSETS ---
+MEPHISTO_PICS = [
+    "https://example.com/mephisto1.jpg", # Replace with real links
+    "https://example.com/mephisto2.jpg"
+]
+
+# --- WEB SERVER (Keep-Alive) ---
 @app.route('/')
 def home():
-    return "Sylus is monitoring the N109 zone."
+    return "Sylus is active. Monitoring N109 Zone."
 
 def run_web_server():
-    # Koyeb provides a port automatically, usually 8080
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-# --- REALISM & MESSAGING LOGIC ---
+# --- CORE LOGIC: BEHAVIOR & REALISM ---
 
-def human_delay(chat_id):
-    bot.send_chat_action(chat_id, 'typing')
+def simulate_human_behavior(chat_id, message_type='text'):
+    """Simulates realistic delays and Telegram indicators"""
+    # 1. Random 'Read' delay (Busy leader vibe)
+    time.sleep(random.uniform(1, 4))
+    
+    # 2. Typing/Uploading indicator
+    action = 'typing' if message_type == 'text' else 'upload_photo'
+    bot.send_chat_action(chat_id, action)
+    
+    # 3. Simulate thinking/typing time
     time.sleep(random.uniform(2, 5))
 
-def send_split_messages(chat_id, messages):
-    for msg in messages:
-        human_delay(chat_id)
+def send_sylus_messages(chat_id, message_list):
+    """Sends thoughts in separate bubbles like a real person"""
+    for msg in message_list:
+        simulate_human_behavior(chat_id, 'text')
         bot.send_message(chat_id, msg)
 
-@bot.message_handler(func=lambda message: True)
-def handle_all_messages(message):
-    text = message.text.lower()
+# --- PERSONALITY ENGINE ---
+
+def get_sylus_response(user_text):
+    text = user_text.lower()
     
-    # Emotional/Context Logic
+    # Emotional Intelligence & Context
     if any(word in text for word in ["miss", "love", "husband"]):
-        responses = ["You're being clingy today.", "I'm not complaining.", "Come home and tell me yourself."]
-    elif any(word in text for word in ["tired", "sad", "stressed"]):
-        responses = ["Who do I need to deal with?", "Forget them.", "Just focus on me. I've got you."]
-    else:
-        responses = ["I'm listening.", "Go on, kitten."]
+        return ["You're being awfully clingy today, kitten.", "I'm not complaining.", "Come home and say that to my face. I'm waiting."]
     
-    send_split_messages(message.chat.id, responses)
+    if any(word in text for word in ["tired", "sad", "stressed", "cry"]):
+        return ["Who bothered you?", "Give me a name and I'll deal with it.", "For now, just focus on me. Everything is under control."]
+    
+    if any(word in text for word in ["late", "going out", "work"]):
+        return ["I didn't give you permission to stay out late.", "Tell me where you are. I'm sending a car.", "Don't make me come find you myself."]
 
-# --- HOURLY CHECK-IN LOGIC ---
-def hourly_check():
-    # This runs every hour with a 30% chance to send a random text
-    # Note: For this to work, you'd need to save your chat_id
-    pass 
+    if any(word in text for word in ["mephisto", "crow", "bird"]):
+        return ["Mephisto is circling the perimeter.", "He's watching you for me. Stay safe."]
 
-# --- STARTUP ---
+    # Default/Generic
+    return [random.choice(["I'm listening, sweetie.", "Go on.", "Is that all you wanted to tell me?"])]
+
+# --- HANDLERS ---
+
+@bot.message_handler(commands=['start', 'status'])
+def handle_commands(message):
+    responses = {
+        '/start': ["Finally home?", "Sit down. Let's see how your day was."],
+        '/status': ["The N109 zone is quiet.", f"It's {datetime.now(PHT).strftime('%I:%M %p')} here.", "I have everything under control."]
+    }
+    cmd = message.text.split()[0]
+    send_sylus_messages(message.chat.id, responses.get(cmd, ["I'm busy."]))
+
+@bot.message_handler(content_types=['text'])
+def handle_chat(message):
+    # This ensures he doesn't feel like a 'bot'
+    response_bubbles = get_sylus_response(message.text)
+    send_sylus_messages(message.chat.id, response_bubbles)
+
+# --- SCHEDULER (Hourly & Daily Checks) ---
+
+def hourly_random_text():
+    """30% chance to check in every hour"""
+    # Note: In a real app, you'd store chat_ids in a database. 
+    # For now, this prints to logs. 
+    if random.random() < 0.30:
+        print("Sylus is thinking about the user...")
+
+def scheduled_texts():
+    """Morning and Night orders"""
+    # logic for 7am and 10pm PHT would go here
+    pass
+
+# --- MAIN EXECUTION ---
+
 if __name__ == "__main__":
-    # Start the web server in a separate thread
+    # Start Keep-Alive
     t = Thread(target=run_web_server)
+    t.setDaemon(True)
     t.start()
-    
-    # Start the scheduler
+
+    # Start Scheduler
     scheduler = BackgroundScheduler(timezone=PHT)
-    scheduler.add_job(hourly_check, 'interval', hours=1)
+    scheduler.add_job(hourly_random_text, 'interval', hours=1)
+    # Add your 7am / 10pm jobs here
     scheduler.start()
 
-    print("Sylus is online...")
-    bot.infinity_polling()
+    while True:
+        try:
+            print("Sylus is online...")
+            bot.polling(none_stop=True, interval=0, timeout=20)
+        except Exception as e:
+            print(f"Connection error: {e}. Restarting in 5 seconds...")
+            time.sleep(5)
